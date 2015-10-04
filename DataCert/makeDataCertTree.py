@@ -17,7 +17,6 @@ parser.add_argument('--minrun',  type=int, default=230000,help="Minimum run numb
 parser.add_argument('-b', '--isBatch', default=False, action="store_true", help="Doesn't pop up plots and only fills tree when CMS and BRIL data are present")
 parser.add_argument('-v', '--includeVertices', default=True, action="store_false", help="Include vertex counting (default true)")
 parser.add_argument('--eventBased', default=False, action="store_true", help="PCC ntuples are event based (default false--typically LS-based)")
-parser.add_argument('--outPath', default="", help="The path for the output file")
 
 args = parser.parse_args()
 
@@ -149,12 +148,6 @@ validVertexCounts={}
 PCCsPerLS={}
 lumiEstimate={}
 # key is bx,LS and LS
-
-if args.outPath!="":
-    outpath=args.outPath
-    
-    if outpath.find("/store")==0:
-        outpath="root://eoscms//eos/cms"+outpath
 
 if args.pccfile!="":
     filename=args.pccfile
@@ -294,9 +287,8 @@ if args.isBatch is True:
 LSKeys.sort()
 
 newfilename="dataCertification_"+str(LSKeys[0][0])+"_"+str(LSKeys[-1][0])+"_"+args.label+".root"
-if args.outPath!="":
-    newfilename=outpath+"/"+newfilename
-newfile=ROOT.TFile.Open(newfilename,"RECREATE")
+    
+newfile=ROOT.TFile(newfilename,"recreate")
 newtree=ROOT.TTree("certtree","validationtree")
 
 fill= array.array( 'I', [ 0 ] )
