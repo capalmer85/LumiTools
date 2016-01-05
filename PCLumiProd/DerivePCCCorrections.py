@@ -3,6 +3,7 @@ from math import exp
 import argparse
 import subprocess
 import ROOT
+import array
 
 parser=argparse.ArgumentParser()
 #parser.add_argument("-h", "--help", help="Display this message.")
@@ -18,13 +19,14 @@ parser.add_argument("--noType2", action='store_true', default=False, help="Only 
 parser.add_argument("-u","--useresponse", action='store_true', default=False, help="Use the final response instead of the real activity to calculate the Type2 Correction")
 parser.add_argument('-b', '--batch',   action='store_true', default=False, help="Batch mode (doesn't make GUI TCanvases)")
 parser.add_argument('-p', '--par', default="0.059,0.0,0.0007,0.013", help="The parameters for type1 and type2 correction")
-parser.add_argument('--savePNGs', default=False, help="Save PNGs or not (Default:  False)")
 
 args=parser.parse_args()
 
+BXLength=3600
+zeroes=array.array('d',[0.]*BXLength)
 def findRange( hist, cut):
     gaplist=[]
-    for i in range(1,3600):
+    for i in range(1,BXLength):
         if hist.GetBinContent(i)<cut:
             gaplist.append(i)
     return gaplist
@@ -79,10 +81,10 @@ for ic in range(10):
 for iq in range(10):
     histpar_quad.SetBinContent(iq,args.quadTrainCorr)
 
-type2CorrTemplate=ROOT.TH1F("type2CorrTemplate","",3600,0,3600)
+type2CorrTemplate=ROOT.TH1F("type2CorrTemplate","",BXLength,0,BXLength)
 
 # type 2 model is simple exponential
-for i in range(1,3600):
+for i in range(1,BXLength):
     type2CorrTemplate.SetBinContent(i,b*exp(-(i-2)*c))
 type2CorrTemplate.GetXaxis().SetRangeUser(0,100)
 
@@ -166,10 +168,10 @@ for run in runs:
     for iLB in range(maxLSInRun[run]/nLSInLumiBlock+1):
         LBKey=run+"_LS"+str(iLB*nLSInLumiBlock+1)+"_LS"+str((iLB+1)*nLSInLumiBlock)
 
-        noisePerBX[LBKey]=ROOT.TH1F("noisePerBX"+LBKey,"",3600,0,3600)
-        allLumiPerBX[LBKey]=ROOT.TH1F("allLumiPerBX"+LBKey,"",3600,0,3600)
-        normPerBX[LBKey]=ROOT.TH1F("normPerBX"+LBKey,"",3600,0,3600)
-        corrPerBX[LBKey]=ROOT.TH1F("corrPerBX"+LBKey,"",3600,0,3600)
+        noisePerBX[LBKey]=ROOT.TH1F("noisePerBX"+LBKey,"",BXLength,0,BXLength)
+        allLumiPerBX[LBKey]=ROOT.TH1F("allLumiPerBX"+LBKey,"",BXLength,0,BXLength)
+        normPerBX[LBKey]=ROOT.TH1F("normPerBX"+LBKey,"",BXLength,0,BXLength)
+        corrPerBX[LBKey]=ROOT.TH1F("corrPerBX"+LBKey,"",BXLength,0,BXLength)
     
 
 for filename in filenames:
@@ -207,12 +209,6 @@ for filename in filenames:
     tfile.Close()
 
 
-can=ROOT.TCanvas("can_corr_temp","",800,800)
-canfull=ROOT.TCanvas("can_full","",800,800)
-cansig=ROOT.TCanvas("can_sig","",800,800)
-canfill=ROOT.TCanvas("can_fill","",800,800)
-canratio=ROOT.TCanvas("ratio_fill","",800,800)
-        
 for run in runs:
     runnum=int(run)
 
@@ -220,27 +216,17 @@ for run in runs:
         LBKey=run+"_LS"+str(iLB*nLSInLumiBlock+1)+"_LS"+str((iLB+1)*nLSInLumiBlock)
         
         allLumiPerBX[LBKey].Divide(normPerBX[LBKey])
+        allLumiPerBX[LBKey].SetError(zeroes)
         allCorrLumiPerBX[LBKey]=allLumiPerBX[LBKey].Clone()
         allLumiPerBX[LBKey].SetTitle("Random Triggers in Run "+run+";BX;Average PCC SBIL Hz/ub")
         allCorrLumiPerBX[LBKey].SetTitle("Random Triggers in Run "+run+", after correction;BX; Average PCC SBIL Hz/ub")
         allLumiPerBX[LBKey].SetLineColor(416)
-        #allLumiPerBX[LBKey].GetXaxis().SetRangeUser(0,2000)
-        allLumiPerBX[LBKey].GetYaxis().SetRangeUser(-0.02,0.3)
         
-        can.cd()
         type2CorrTemplate.SetTitle("Correction Function Template")
-        #type2CorrTemplate.Draw("HIST")
-        #if args.savePNGs:
-        #    can.SaveAs("SBIL_randoms_"+run+"_type2CorrTemplate_"+label+".png")
         
-        canfull.cd()
-        allLumiPerBX[LBKey].Draw()
-        #if args.savePNGs:
-        #    canfull.SaveAs("full_SBIL_randoms_"+run+"_full_"+label+".png")
-        
-        cansig.cd()
         noise=0
         
+        print "Find abort gap"
         gap=False
         idl=0
         num_cut=20
@@ -254,45 +240,51 @@ for run in runs:
         noise=noise/num_cut
              
         
-        for k in range(1,3600):
-            bin_k = allCorrLumiPerBX[LBKey].GetBinContent(k)
-            allCorrLumiPerBX[LBKey].SetBinContent(k+1, allCorrLumiPerBX[LBKey].GetBinContent(k+1)-bin_k*a1-bin_k*bin_k*a2)
-            corrPerBX[LBKey].SetBinContent(k+1, corrPerBX[LBKey].GetBinContent(k+1)+bin_k*a1+bin_k*bin_k*a2)
+        print "Apply and save type 1 corrections"
+        if not args.noType1:
+            for k in range(1,BXLength):
+                bin_k = allCorrLumiPerBX[LBKey].GetBinContent(k)
+                allCorrLumiPerBX[LBKey].SetBinContent(k+1, allCorrLumiPerBX[LBKey].GetBinContent(k+1)-bin_k*a1-bin_k*bin_k*a2)
+                corrPerBX[LBKey].SetBinContent(k+1, corrPerBX[LBKey].GetBinContent(k+1)+bin_k*a1+bin_k*bin_k*a2)
         allLumiType1CorrPerBX[LBKey]=allCorrLumiPerBX[LBKey].Clone()
+        allLumiType1CorrPerBX[LBKey].SetError(zeroes)
         
-        for m in range(1,3600):
+        for m in range(1,BXLength):
             allCorrLumiPerBX[LBKey].SetBinContent(m, allCorrLumiPerBX[LBKey].GetBinContent(m)-noise)
             noisePerBX[LBKey].SetBinContent(m, noise)
             corrPerBX[LBKey].SetBinContent(m, corrPerBX[LBKey].GetBinContent(m)+noise)
         
         
-        for i in range(1,3600):
-            for j in range(i+1,3600):
-                binsig_i=allCorrLumiPerBX[LBKey].GetBinContent(i)
-                binfull_i=allLumiPerBX[LBKey].GetBinContent(i)
-                if not args.useresponse:
-                    allCorrLumiPerBX[LBKey].SetBinContent(j,allCorrLumiPerBX[LBKey].GetBinContent(j)-binsig_i*type2CorrTemplate.GetBinContent(j-i))
-                    corrPerBX[LBKey].SetBinContent(j, corrPerBX[LBKey].GetBinContent(j)+binsig_i*type2CorrTemplate.GetBinContent(j-i))
-                else:
-                    allCorrLumiPerBX[LBKey].SetBinContent(j,allCorrLumiPerBX[LBKey].GetBinContent(j)-binfull_i*type2CorrTemplate.GetBinContent(j-i))
-                    corrPerBX[LBKey].SetBinContent(j,corrPerBX[LBKey].GetBinContent(j)+binfull_i*type2CorrTemplate.GetBinContent(j-i))
+        print "Apply and save type 2 corrections"
+        if not args.noType2:
+            for i in range(1,BXLength):
+                for j in range(i+1,BXLength):
+                    binsig_i=allCorrLumiPerBX[LBKey].GetBinContent(i)
+                    binfull_i=allLumiPerBX[LBKey].GetBinContent(i)
+                    if not args.useresponse:
+                        allCorrLumiPerBX[LBKey].SetBinContent(j,allCorrLumiPerBX[LBKey].GetBinContent(j)-binsig_i*type2CorrTemplate.GetBinContent(j-i))
+                        corrPerBX[LBKey].SetBinContent(j, corrPerBX[LBKey].GetBinContent(j)+binsig_i*type2CorrTemplate.GetBinContent(j-i))
+                    else:
+                        allCorrLumiPerBX[LBKey].SetBinContent(j,allCorrLumiPerBX[LBKey].GetBinContent(j)-binfull_i*type2CorrTemplate.GetBinContent(j-i))
+                        corrPerBX[LBKey].SetBinContent(j,corrPerBX[LBKey].GetBinContent(j)+binfull_i*type2CorrTemplate.GetBinContent(j-i))
         
         allLumiType1And2CorrPerBX[LBKey]=allCorrLumiPerBX[LBKey].Clone()
+        allLumiType1And2CorrPerBX[LBKey].SetError(zeroes)
         
+        print "Apply and save additional quadratic subtraction for trains",args.quadTrainCorr
         if args.quadTrainCorr != 0:
-            print "Quadratic subtraction for trains"
             #find train BXs
             trainBXs=[]
             trainBXs2=[]
             maxBX=0
-            for ibx in range(1,3600):
+            for ibx in range(1,BXLength):
                 thisSBIL=allCorrLumiPerBX[LBKey].GetBinContent(ibx)
                 if thisSBIL>maxBX:
                     maxBX=thisSBIL
         
             #this ignores the leading bx-desired behavior
             print maxBX
-            for ibx in range(2,3600):
+            for ibx in range(2,BXLength):
                 prevBXActive=(allCorrLumiPerBX[LBKey].GetBinContent(ibx-1)>maxBX*0.2)
                 prevBXActive2=(allCorrLumiPerBX[LBKey].GetBinContent(ibx-1)>0.5)
                 
@@ -318,37 +310,16 @@ for run in runs:
                 allCorrLumiPerBX[LBKey].SetBinContent(ibx,binsig_i-args.quadTrainCorr*binsig_i*binsig_i)
                 corrPerBX[LBKey].SetBinContent(ibx, corrPerBX[LBKey].GetBinContent(ibx)+args.quadTrainCorr*binsig_i*binsig_i)
             
-        
-        #allCorrLumiPerBX.GetXaxis().SetRangeUser(0,2000)
-        allCorrLumiPerBX[LBKey].GetYaxis().SetRangeUser(-0.03,3.0)
-        allCorrLumiPerBX[LBKey].Draw()
-        #if args.savePNGs:
-        #    cansig.SaveAs("full_SBIL_randoms_"+run+"_signal"+label+".png")
-        
-        #canfill.cd()
-        #corrPerBX[LBKey].SetTitle("The Overall Correction in the Run "+run)
-        #corrPerBX[LBKey].Draw()
-        #if args.savePNGs:
-        #    canfill.SaveAs("full_SBIL_randoms_"+run+"_fill_"+label+".png")
-        
+       
+        print "Finish up dividing plots"
         corrRatioPerBX[LBKey]=corrPerBX[LBKey].Clone()
+        corrPerBX[LBKey].SetError(zeroes)
         corrRatioPerBX[LBKey].Divide(allLumiPerBX[LBKey])
-        
-        #canratio.cd()
-        #corrRatioPerBX[LBKey].SetTitle("The Ratio of Overall Correction in the Run "+run)
-        #corrRatioPerBX[LBKey].GetXaxis().SetTitle("BX")
-        #corrRatioPerBX[LBKey].GetYaxis().SetTitle("Ratio")
-        #corrRatioPerBX[LBKey].Draw()
-        #if args.savePNGs:
-        #    canratio.SaveAs("full_SBIL_randoms_"+run+"_ratio_"+label+".png")
-        
-        #ratio_gap=ROOT.TH1F("ratio_gap", "",100,0,2.8)
-        #gapList=findRange(allLumiPerBX, 0.2)
-        #for l in gapList:
-        #    ratio_gap.Fill(corrRatioPerBX[LBKey].GetBinContent(l))
+        corrRatioPerBX[LBKey].SetError(zeroes)
         
         noiseToCorrRatio[LBKey]=noisePerBX[LBKey].Clone()
         noiseToCorrRatio[LBKey].Divide(corrPerBX[LBKey])
+        noiseToCorrRatio[LBKey].SetError(zeroes)
         
         newfile.WriteTObject(allLumiPerBX[LBKey],  "Before_Corr_"+LBKey)
         newfile.WriteTObject(allLumiType1CorrPerBX[LBKey], "After_TypeI_Corr_"+LBKey)
